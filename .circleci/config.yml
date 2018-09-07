@@ -1,0 +1,65 @@
+version: 2.1
+
+description: "Provides functionality related to running Cypress.io tests"
+
+executors:
+  default:
+    description:
+      "Uses an image with Cypress CLI prerequisites pre-installed" 
+    parameters:
+      tag:
+        type: string
+        default: "8"
+    docker:
+      - image: cypress/base:<< parameters.tag >>
+  chrome:
+    description:
+      "Uses an image with all dependencies for Cypress - includes browsers 
+      Chrome 67"
+    parameters:
+      tag:
+        type: string
+        default: "chrome67"
+    docker:
+      - image: cypress/browsers:<< parameters.tag >>
+  basepack:
+    description:
+      Uses the basic buildpack-deps image - lacks the
+      prerequisites for installing Cypress' CLI.
+    parameters:
+      tag:
+        type: string
+        default: "bionic"
+    docker:
+      - image: buildpack-deps:<< parameters.tag >>
+
+commands:
+  install:
+    steps:
+      - run:
+          name: "Install Cypress CLI, if necessary"
+          command: |
+            if [[ $(command -v npm) == "" ]]; then
+              echo "NPM is required to install Cypress and not installed."
+              exit 1
+            else 
+              if [[ $(command -v $(npm bin)/cypress) == "" ]]; then
+                npm install cypress
+              else
+                echo "Cypress is already installed. No operation was performed."
+              fi
+            fi
+jobs:
+  install:
+    executor: default
+    steps:
+      - checkout
+      - install
+      - run: $(npm bin)/cypress run
+  install_basepack:
+    executor: basepack
+    steps:
+      - checkout
+      - install
+      - run: $(npm bin)/cypress run
+
