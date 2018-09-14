@@ -1,65 +1,143 @@
-version: 2.1
+# Javascript Node CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-javascript/ for more details
+#
+orbs:
+  cypress: ttrahan/cypress@dev:test
 
-description: "Provides functionality related to running Cypress.io tests"
-
-executors:
-  default:
-    description:
-      "Uses an image with Cypress CLI prerequisites pre-installed" 
-    parameters:
-      tag:
-        type: string
-        default: "8"
-    docker:
-      - image: cypress/base:<< parameters.tag >>
-  chrome:
-    description:
-      "Uses an image with all dependencies for Cypress - includes browsers 
-      Chrome 67"
-    parameters:
-      tag:
-        type: string
-        default: "chrome67"
-    docker:
-      - image: cypress/browsers:<< parameters.tag >>
-  basepack:
-    description:
-      Uses the basic buildpack-deps image - lacks the
-      prerequisites for installing Cypress' CLI.
-    parameters:
-      tag:
-        type: string
-        default: "bionic"
-    docker:
-      - image: buildpack-deps:<< parameters.tag >>
-
-commands:
-  install:
-    steps:
-      - run:
-          name: "Install Cypress CLI, if necessary"
-          command: |
-            if [[ $(command -v npm) == "" ]]; then
-              echo "NPM is required to install Cypress and not installed."
-              exit 1
-            else 
-              if [[ $(command -v $(npm bin)/cypress) == "" ]]; then
-                npm install cypress
-              else
-                echo "Cypress is already installed. No operation was performed."
-              fi
-            fi
 jobs:
-  install:
-    executor: default
+  build:
+    docker:
+      # specify the version you desire here
+      - image: circleci/node:10.8.0-stretch
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/mongo:3.4.4
+    working_directory: ~/repo
     steps:
       - checkout
-      - install
-      - run: $(npm bin)/cypress run
-  install_basepack:
-    executor: basepack
-    steps:
-      - checkout
-      - install
-      - run: $(npm bin)/cypress run
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "package.json" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+      - run: yarn install
+      - cypress/install
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{ checksum "package.json" }}
+      # run tests!
+      - run: yarn test
 
+version: 2.1
+workflows:
+  build_test:
+    jobs:
+      - build
+      - cypress/install:
+          requires: 
+            - build
+      - cypress/install_basepack:
+          requires: 
+            - build
+# jobs:
+#   build:
+#     <<: *defaults
+#     steps:
+#       - checkout
+#       # find compatible cache from previous build,
+#       # it should have same dependencies installed from package.json checksum
+#       - restore_cache:
+#           keys:
+#             - cache-{{ .Branch }}-{{ checksum "package.json" }}
+#       - run:
+#           name: Install Dependencies
+#           command: npm ci
+#       # run verify and then save cache.
+#       # this ensures that the Cypress verified status is cached too
+#       - run: npm run cy:verify
+#       # save new cache folder if needed
+#       - save_cache:
+#           key: cache-{{ .Branch }}-{{ checksum "package.json" }}
+#           paths:
+#             - ~/.npm
+#             - ~/.cache
+#       - run: npm run types
+#       # all other test jobs will run AFTER this build job finishes
+#       # to avoid reinstalling dependencies, we persist the source folder "app"
+#       # and the Cypress binary to workspace, which is the fastest way
+#       # for Circle jobs to pass files
+#       - persist_to_workspace:
+#           root: ~/
+#           paths:
+#             - app
+#             - .cache/Cypress
+#
+#   1x-electron:
+#     <<: *defaults
+#     steps:
+#       # restore application and Cypress binary before running the test command
+#       - attach_workspace:
+#           at: ~/
+#       - run:
+#           command: npm start
+#           background: true
+#       # run all tests and pass group name (should be "1x-electron" in this case)
+#       - run: npm run e2e:record -- --group $CIRCLE_JOB
+#
+#   4x-electron:
+#     <<: *defaults
+#     # tell CircleCI to execute this job on 4 machines simultaneously
+#     parallelism: 4
+#     steps:
+#       - attach_workspace:
+#           at: ~/
+#       - run:
+#           command: npm start
+#           background: true
+#       # runs Cypress test in load balancing (parallel) mode
+#       # and groups them in Cypress Dashboard under name "4x-electron"
+#       - run: npm run e2e:record -- --parallel --group $CIRCLE_JOB
+#
+#   2x-chrome:
+#     <<: *defaults
+#     # execute this job on 2 CI machines
+#     parallelism: 2
+#     steps:
+#       - attach_workspace:
+#           at: ~/
+#       - run:
+#           command: npm start
+#           background: true
+#       - run: npm run e2e:record -- --parallel --group $CIRCLE_JOB --browser chrome
+#
+# workflows:
+#   version: 2
+#   # this workflow has 4 jobs to show case Cypress --parallel and --group flags
+#   # "build" installs NPM dependencies so other jobs don't have to
+#   #   └ "1x-electron" runs all specs just like Cypress pre-3.1.0 runs them
+#   #   └ "4x-electron" job load balances all specs across 4 CI machines
+#   #   └ "2x-chrome" load balances all specs across 2 CI machines and uses Chrome browser
+#   build_and_test:
+#     jobs:
+#       - build
+#       # after installing dependencies in the "build" job
+#       # run all tests in several groups
+#       #     group "1x-electron"
+#       - 1x-electron:
+#           requires:
+#             - build
+#       # this group "4x-electron" will load balance all specs
+#       # and use the built-in Electron browser run them
+#       - 4x-electron:
+#           requires:
+#             - build
+#       # this group "2x-chrome" will load balance all specs
+#       # and use Chrome browser to run them
+#       - 2x-chrome:
+#           requires:
+#             - build
+#
